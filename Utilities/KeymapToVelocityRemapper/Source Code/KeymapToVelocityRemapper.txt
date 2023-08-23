@@ -1,0 +1,137 @@
+//KEYMAP TO VELOCITY REMAPPER for JXL-style sample libraries
+//created by Christopher Lane 2023, chris@christopherlane.studio
+
+/*
+	This script is used to remap sample libraries where the velocities
+	are laid out across a lot of keyboard notes instead of on a few 
+	velocity-sensitive notes. 
+	
+	To use, you must first teach the script the lowest and highest notes
+	used in the original note-based mapping. Then you'll want to choose 
+	the triggering octave to have this instrument remapped to. There is also 
+	an option to choose your input velocity range, in case you prefer a different
+	velocity sensitivity or your controller is less responsive at the lowest 
+	velocities.
+	
+	Here are the details of these controls:
+	
+	Mode: 
+		- "Transform": this is the mode you should be in when actively playing
+			the instrument after you've setup the other parameters.
+		- "Learn Low": while in this mode, the key you press will set the script's
+			low note value for the patch. For example, if the original library
+			had the lowest velocity note mapped to C-1, you'd want to play that.
+		- "Learn High": Similar to Learn Low, but sets the highest note that
+			the instrument was originally programmed to.
+			
+	TriggerOctave:
+		- This is a range from 1.0 to 7.0 at half-octave intervals. This is
+			the note range that you'll actually play to trigger this instrument.
+			If on a whole-number octave, triggering will occur from C to F.
+			If on a half-octave, triggering will occur from F# to B.
+			By selecting different triggering octaves, you can quickly remap 
+			multiple instruments to nearby playing ranges. For example, on a 
+			concert tom library you might set the script on the Low Tom to use
+			TriggerOctave 3.0, mid tom to 3.5, and High Tom to 4.0. If you put 
+			those three instruments in a track stack, you can now play the 
+			track stack and have all three toms readily available all at once.
+			
+	ChannelOut:
+		- If you've assigned your patch to a specific channel, set it here.
+			If this is set to "0", output notes keep the same channel as input notes.
+		
+	NoteMin:
+		- This is the note assigned the lowest velocity in the original patch.
+			This will be set automatically if you use the "Learn Low" Mode, but
+			you can also adjust this manually here.
+	NoteMax:
+		- This is the note assigned the highest velocity in the original patch.
+			This will be set automatically if you use the "Learn High" Mode, but
+			you can also adjust this manually here. 
+			
+	Vel Min: 
+		- This lets you set what input velocity will now trigger the lowest
+			sampled velocity note. This can be useful to adjust if you tend to 
+			perform percussion with higher overall velocities but want more 
+			sonic range in the performed notes. Or, if your keyboard doesn't
+			easily generate extremely low velocity notes you can set this higher
+			to compensate.
+			
+	Vel Max:
+		- This will usually be 127, but if you want to perform with less finger
+			impact and still get high velocity output, you could lower this value.
+			
+	Note Length (ms): 
+		- This sets the length of the new remapped note. This script works best with one-shot
+			style libraries where this setting shouldn't even have much effect and note lengths can
+			be very short, but this is here as an option if you need it.
+*/
+
+
+
+var lowestTriggerNote = 12;
+
+var PluginParameters = [
+	{name:"Mode", type:"menu",
+     valueStrings:["Learn Low", "Learn High", "Transform"],
+     defaultValue:2, numberOfSteps:3},
+    	{name:"TriggerOctave", type:"lin", minValue:1, maxValue: 7, numberOfSteps:12, defaultValue:4},
+	{name:"Channel Out", type:"lin", minValue:0, maxValue: 16, numberOfSteps:16, defaultValue:0},
+	{name:"Note Min", type:"lin", minValue:0, maxValue: 127, numberOfSteps:127, defaultValue:14},
+	{name:"Note Max", type:"lin", minValue:0, maxValue: 127, numberOfSteps:127, defaultValue:100},
+	{name:"Vel Min", type:"lin", minValue:0, maxValue: 127, numberOfSteps:127, defaultValue:15},
+	{name:"Vel Max", type:"lin", minValue:0, maxValue: 127, numberOfSteps:127, defaultValue:127},
+	{name:"Note Length (ms)", type: "lin", minValue: 10, maxValue: 5000, numberOfSteps:4990, defaultValue: 100}
+	];												                                     
+			
+function convertRange(value, r1, r2 ) { 
+    return ( value - r1[ 0 ] ) * ( r2[ 1 ] - r2[ 0 ] ) / ( r1[ 1 ] - r1[ 0 ] ) + r2[ 0 ];
+}
+				
+function getTriggerStartNote() {
+	return (lowestTriggerNote + (GetParameter("TriggerOctave") * 12))
+}
+								                                              
+function HandleMIDI(event) {
+
+    if (GetParameter("Mode") == 0){
+    		if(event instanceof NoteOn) {
+    			SetParameter("Note Min", event.pitch);
+    		}
+    		event.send();
+    }
+   	else if (GetParameter("Mode") == 1){
+   		if(event instanceof NoteOn) {
+    			SetParameter("Note Max", event.pitch);
+    		}
+    		event.send();
+   	}
+   	else
+   	{	
+   		if (event instanceof Note) {
+    			if(event instanceof NoteOn) {
+    				var triggerNote = getTriggerStartNote();
+    				if (event.pitch >= triggerNote && event.pitch < triggerNote + 6){
+    				
+    					var convertedValue = convertRange(
+    						event.velocity, 
+    						[GetParameter("Vel Min"), GetParameter("Vel Max")],
+    						[GetParameter("Note Min"), GetParameter("Note Max")]);
+    					event.pitch = convertedValue;
+					if (GetParameter("Channel Out") > 0){
+						event.channel = GetParameter("Channel Out");
+					}
+    					event.send();
+    		
+    					var noteOff = new NoteOff;
+    					noteOff.pitch = event.pitch;
+    					noteOff.channel = event.channel;
+    					noteOff.sendAfterMilliseconds(GetParameter("Note Length (ms)"));
+    				}
+    			}
+    		} else {
+    			//Pass through any non-note events
+    			event.send();
+    		}
+    }
+}
